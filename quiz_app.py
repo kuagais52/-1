@@ -24,7 +24,11 @@ def load_questions_from_txt(file):
             parts = line.strip().split('|')
             if len(parts) >= 4:
                 _, qtype, question, answer = parts[:4]
-                options = parts[4:] if qtype == '객관식' else []
+                if qtype == '객관식':
+                    options_with_numbers = [opt.strip() for opt in parts[4:]]
+                    options = [opt.split(')', 1)[1].strip() if ')' in opt else opt for opt in options_with_numbers]
+                else:
+                    options = []
                 questions.append({
                     'type': qtype,
                     'label': TYPE_LABELS.get(qtype, qtype),
@@ -89,10 +93,14 @@ if uploaded_file:
     else:
         tab1, tab2 = st.tabs(["📝 퀴즈 풀기", "📊 내 통계 보기"])
 
-        # 📝 탭 1: 퀴즈 풀기
         with tab1:
             st.sidebar.subheader("🛠️ 문제 수 설정")
-            num_questions = st.sidebar.slider("출제할 문제 수", min_value=5, max_value=min(100, total_available), value=10)
+            num_questions = st.sidebar.slider(
+                "출제할 문제 수",
+                min_value=1,
+                max_value=total_available,
+                value=min(10, total_available)
+            )
 
             if st.sidebar.button("🔄 문제 새로 뽑기"):
                 st.session_state['selected_questions'] = random.sample(all_questions, num_questions)
@@ -140,74 +148,3 @@ if uploaded_file:
                 st.download_button("📥 결과 저장 (txt)", result_text, file_name="quiz_result.txt")
 
                 save_stats_to_csv(selected_questions, user_answers, score)
-
-        # 📊 탭 2: 통계 보기
-        with tab2:
-            stats_file = "quiz_stats.csv"
-            if os.path.exists(stats_file):
-                df = pd.read_csv(stats_file)
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                df['정답여부'] = df['result'] == '정답'
-
-                st.subheader("📋 통계 요약")
-
-                total = len(df)
-                correct = df['정답여부'].sum()
-                st.metric("전체 정답률", f"{correct}/{total} ({correct/total:.0%})")
-
-                type_summary = df.groupby('label')['정답여부'].agg(['count', 'sum'])
-                type_summary['정답률(%)'] = (type_summary['sum'] / type_summary['count'] * 100).round(1)
-                st.markdown("📌 문제 유형별 정답률")
-                st.dataframe(type_summary.rename(columns={'count': '총 개수', 'sum': '정답 수'}))
-
-                wrong = df[df['result'] == '오답']
-                if not wrong.empty:
-                    st.markdown("❌ 최근 틀린 문제 (최대 5개)")
-                    st.dataframe(wrong[['timestamp', 'label', 'question', 'user_answer', 'correct_answer']].tail(5))
-                else:
-                    st.success("🎉 최근에 틀린 문제가 없습니다!")
-
-                # 📈 시각화
-                st.subheader("📈 시각화")
-
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.markdown("### 🗓️ 날짜별 정답률")
-                    score_summary = df.groupby(df['timestamp'].dt.date)['정답여부'].agg(['count', 'sum']).reset_index()
-                    score_summary['정답률(%)'] = (score_summary['sum'] / score_summary['count'] * 100).round(1)
-                    score_summary.columns = ['날짜', '전체 수', '맞은 수', '정답률(%)']
-                    st.line_chart(score_summary.set_index('날짜')['정답률(%)'])
-
-                with col2:
-                    st.markdown("### 🧩 유형별 누적 정답률")
-                    bar_data = type_summary['정답률(%)'].sort_values(ascending=False)
-                    st.bar_chart(bar_data)
-
-                st.markdown("### 🔥 히트맵 (날짜 vs. 문제 유형 정답 수)")
-                heat_df = df.groupby([df['timestamp'].dt.date, 'label'])['정답여부'].sum().unstack(fill_value=0)
-                st.dataframe(heat_df.style.background_gradient(cmap='Blues', axis=None))
-
-                # 📉 오답률 상위 문제 다시 풀기
-                st.markdown("### 🧪 오답률 상위 문제로 다시 풀기")
-                wrong_rate_df = df.groupby(['question', 'label', 'correct_answer'])['정답여부'].agg(['count', 'sum']).reset_index()
-                wrong_rate_df['오답률'] = ((wrong_rate_df['count'] - wrong_rate_df['sum']) / wrong_rate_df['count']).round(2)
-                wrong_rate_df = wrong_rate_df.sort_values(by='오답률', ascending=False)
-
-                top_wrong_questions = wrong_rate_df.head(5)
-                top_questions = []
-                for _, row in top_wrong_questions.iterrows():
-                    top_questions.append({
-                        'type': row['label'],
-                        'label': row['label'],
-                        'question': row['question'],
-                        'answer': row['correct_answer'],
-                        'options': []  # 객관식이더라도 옵션은 없음 (실제 문제파일에서 추출 필요)
-                    })
-
-                if st.button("📉 오답률 상위 문제로 다시 풀기"):
-                    st.session_state['selected_questions'] = top_questions
-                    st.session_state['from_wrong_top'] = True
-                    st.experimental_rerun()
-            else:
-                st.warning("📂 아직 저장된 통계가 없습니다. 퀴즈를 먼저 풀어주세요.")
