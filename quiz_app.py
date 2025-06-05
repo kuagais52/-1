@@ -1,4 +1,3 @@
-
 import streamlit as st
 import random
 import datetime
@@ -26,9 +25,8 @@ def load_questions_from_txt(file):
             if len(parts) >= 4:
                 _, qtype, question, answer_raw = parts[:4]
                 if qtype == '객관식':
-                    options_with_numbers = [opt.strip() for opt in parts[4:]]
+                    options_with_numbers = [opt.strip() for opt in parts[4:8]]  # 최대 4개의 보기만 추출
                     options = [opt.split(')', 1)[1].strip() if ')' in opt else opt for opt in options_with_numbers]
-                    # answer_raw가 숫자일 경우 -> 해당 옵션 텍스트로 정답 대체
                     if answer_raw.strip().isdigit():
                         idx = int(answer_raw.strip()) - 1
                         answer = options[idx] if 0 <= idx < len(options) else answer_raw
