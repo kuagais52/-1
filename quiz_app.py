@@ -24,7 +24,8 @@ def load_questions_from_json(file):
         qtype = item.get('type', '객관식')
         label = TYPE_LABELS.get(qtype, qtype)
         question = item['question']
-        options = item.get('options', [])
+        # 수정: 'choices'로 옵션을 불러오도록
+        options = item.get('choices') or item.get('options', [])
         answer = item['answer']
         questions.append({
             'type': qtype,
