@@ -24,10 +24,10 @@ def load_questions_from_json(file):
         qtype = item.get('type', '객관식')
         label = TYPE_LABELS.get(qtype, qtype)
         question = item['question']
-        # 수정: 'choices'로 옵션을 불러오도록
         options = item.get('choices') or item.get('options', [])
         answer = item['answer']
         questions.append({
+            'id': item.get('id', ''),
             'type': qtype,
             'label': label,
             'question': question,
@@ -43,20 +43,36 @@ def generate_result_text(questions, user_answers, score):
     output.write(f"GIS 랜덤 퀴즈 결과 - {now}\n")
     output.write(f"총 점수: {score} / {len(questions)}\n\n")
     for idx, (q, ua) in enumerate(zip(questions, user_answers), start=1):
-        correct = q['options'][q['answer']] if isinstance(q['answer'], int) else str(q['answer'])
-        result = "정답" if correct.strip() == ua.strip() else "오답"
+        correct = get_correct_answer_text(q)
+        result = "정답" if is_user_answer_correct(q, ua) else "오답"
         output.write(f"{idx}. [{q['label']}] {q['question']}\n")
         output.write(f"    - 정답: {correct} | 내 답: {ua} → {result}\n")
     return output.getvalue()
+
+# 정답 텍스트 구하기
+def get_correct_answer_text(q):
+    if q["type"] == "객관식" and isinstance(q["answer"], str) and q["answer"].isdigit():
+        index = int(q["answer"]) - 1
+        return q["options"][index] if 0 <= index < len(q["options"]) else "정보 없음"
+    return str(q["answer"])
+
+# 정답 판별 함수
+def is_user_answer_correct(q, user_input):
+    correct_text = get_correct_answer_text(q).strip()
+    user_text = user_input.strip()
+
+    if q["type"] == "객관식" and isinstance(q["answer"], str) and q["answer"].isdigit():
+        return user_text == correct_text
+    return user_text == str(q["answer"]).strip()
 
 # 통계 저장
 def save_stats_to_csv(questions, user_answers, score, filepath="quiz_stats.csv"):
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     data = []
     for q, ua in zip(questions, user_answers):
-        correct = q['options'][q['answer']] if isinstance(q['answer'], int) else str(q['answer'])
+        correct = get_correct_answer_text(q)
         user = ua.strip()
-        is_correct = correct.strip() == user
+        is_correct = is_user_answer_correct(q, ua)
         data.append({
             "timestamp": now,
             "type": q['type'],
@@ -122,16 +138,15 @@ if uploaded_file:
                 submitted = st.form_submit_button("✅ 제출하기")
 
             if submitted:
-                score = 0
+                score = sum(is_user_answer_correct(q, ua) for q, ua in zip(selected_questions, user_answers))
                 st.subheader("📊 채점 결과")
                 for idx, (q, ua) in enumerate(zip(selected_questions, user_answers), start=1):
-                    correct = q['options'][q['answer']] if isinstance(q['answer'], int) else str(q['answer'])
+                    correct = get_correct_answer_text(q)
                     user = ua.strip()
-                    is_correct = correct.strip() == user
-                    if is_correct:
-                        score += 1
+                    is_correct = is_user_answer_correct(q, ua)
                     st.markdown(f"{idx}. {'✅ 정답' if is_correct else f'❌ 오답'} - 정답: {correct} / 내 답: {user}")
                 st.success(f"🎯 총 점수: {score} / {len(selected_questions)}")
                 result_text = generate_result_text(selected_questions, user_answers, score)
                 st.download_button("📥 결과 저장 (txt)", result_text, file_name="quiz_result.txt")
                 save_stats_to_csv(selected_questions, user_answers, score)
+
