@@ -16,27 +16,23 @@ TYPE_LABELS = {
     '객관식': 'Multiple Choice'
 }
 
-# JSON 파일용 문제 불러오기
+# 문제 불러오기 (JSON)
 def load_questions_from_json(file):
-    content = file.read().decode('utf-8')
-    data = json.loads(content)
+    raw = json.load(file)
     questions = []
-
-    for item in data:
-        qtype = item.get("type", "")
+    for item in raw:
+        qtype = item.get('type', '객관식')
         label = TYPE_LABELS.get(qtype, qtype)
-        question = item.get("question", "")
-        answer = item.get("answer", "")
-        options = item.get("options", []) if qtype == '객관식' else []
-
+        question = item['question']
+        options = item.get('options', [])
+        answer = item['answer']
         questions.append({
-            "type": qtype,
-            "label": label,
-            "question": question,
-            "answer": answer,
-            "options": options
+            'type': qtype,
+            'label': label,
+            'question': question,
+            'options': options,
+            'answer': answer
         })
-
     return questions
 
 # 결과 텍스트 생성
@@ -46,8 +42,8 @@ def generate_result_text(questions, user_answers, score):
     output.write(f"GIS 랜덤 퀴즈 결과 - {now}\n")
     output.write(f"총 점수: {score} / {len(questions)}\n\n")
     for idx, (q, ua) in enumerate(zip(questions, user_answers), start=1):
-        correct = q['answer'].strip()
-        result = "정답" if correct == ua.strip() else "오답"
+        correct = q['options'][q['answer']] if isinstance(q['answer'], int) else str(q['answer'])
+        result = "정답" if correct.strip() == ua.strip() else "오답"
         output.write(f"{idx}. [{q['label']}] {q['question']}\n")
         output.write(f"    - 정답: {correct} | 내 답: {ua} → {result}\n")
     return output.getvalue()
@@ -57,9 +53,9 @@ def save_stats_to_csv(questions, user_answers, score, filepath="quiz_stats.csv")
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     data = []
     for q, ua in zip(questions, user_answers):
-        correct = q['answer'].strip()
+        correct = q['options'][q['answer']] if isinstance(q['answer'], int) else str(q['answer'])
         user = ua.strip()
-        is_correct = correct == user
+        is_correct = correct.strip() == user
         data.append({
             "timestamp": now,
             "type": q['type'],
@@ -69,34 +65,27 @@ def save_stats_to_csv(questions, user_answers, score, filepath="quiz_stats.csv")
             "correct_answer": correct,
             "result": "정답" if is_correct else "오답"
         })
-
     new_df = pd.DataFrame(data)
     if os.path.exists(filepath):
         existing_df = pd.read_csv(filepath)
         combined_df = pd.concat([existing_df, new_df], ignore_index=True)
     else:
         combined_df = new_df
-
     combined_df.to_csv(filepath, index=False)
 
-# 스트림릿 앱 시작
-st.title("🌍 GIS 랜덤 퀴즈 웹앱 (JSON 지원)")
+# 스트림릿 앱 실행
+st.title("🌍 GIS 랜덤 퀴즈 (JSON 기반)")
 
-uploaded_file = st.file_uploader("📁 문제 파일을 업로드해주세요 (.txt 또는 .json)", type=['txt', 'json'])
+uploaded_file = st.file_uploader("📁 문제 JSON 파일을 업로드해주세요", type=['json'])
 
 if uploaded_file:
-    if uploaded_file.name.endswith('.json'):
-        all_questions = load_questions_from_json(uploaded_file)
-    else:
-        st.error("이 앱은 현재 JSON 형식만 지원합니다. 텍스트 기반은 별도 처리 필요합니다.")
-        st.stop()
-
+    all_questions = load_questions_from_json(uploaded_file)
     total_available = len(all_questions)
 
     if total_available < 5:
-        st.warning("❗ 문제 수가 너무 적습니다. 파일을 확인해주세요.")
+        st.warning("❗ 문제 수가 너무 적습니다.")
     else:
-        tab1, tab2 = st.tabs(["📝 퀴즈 풀기", "📊 내 통계 보기"])
+        tab1, tab2 = st.tabs(["📝 퀴즈 풀기", "📊 통계 보기"])
 
         with tab1:
             st.sidebar.subheader("🛠️ 문제 수 설정")
@@ -115,14 +104,12 @@ if uploaded_file:
                 st.session_state['selected_questions'] = random.sample(all_questions, num_questions)
 
             selected_questions = st.session_state['selected_questions']
-
             if st.session_state.get('from_wrong_top'):
-                st.info("📌 이 퀴즈는 오답률이 높은 문제들로 구성되었습니다.")
+                st.info("📌 오답률이 높은 문제들입니다.")
                 del st.session_state['from_wrong_top']
 
             st.subheader("📝 퀴즈 문제")
             user_answers = []
-
             with st.form("quiz_form"):
                 for idx, q in enumerate(selected_questions, start=1):
                     st.markdown(f"**{idx}. [{q['label']}]** {q['question']}")
@@ -131,27 +118,20 @@ if uploaded_file:
                     else:
                         answer = st.text_input(f"답변 입력 {idx}", key=f"ans_{idx}")
                     user_answers.append(answer)
-
                 submitted = st.form_submit_button("✅ 제출하기")
 
             if submitted:
                 score = 0
                 st.subheader("📊 채점 결과")
                 for idx, (q, ua) in enumerate(zip(selected_questions, user_answers), start=1):
-                    correct = q['answer'].strip()
+                    correct = q['options'][q['answer']] if isinstance(q['answer'], int) else str(q['answer'])
                     user = ua.strip()
-                    is_correct = correct == user
+                    is_correct = correct.strip() == user
                     if is_correct:
                         score += 1
-                    st.markdown(
-                        f"{idx}. {'✅ 정답' if is_correct else f'❌ 오답'} - 정답: {correct} / 내 답: {user}"
-                    )
-
+                    st.markdown(f"{idx}. {'✅ 정답' if is_correct else f'❌ 오답'} - 정답: {correct} / 내 답: {user}")
                 st.success(f"🎯 총 점수: {score} / {len(selected_questions)}")
-
                 result_text = generate_result_text(selected_questions, user_answers, score)
                 st.download_button("📥 결과 저장 (txt)", result_text, file_name="quiz_result.txt")
-
                 save_stats_to_csv(selected_questions, user_answers, score)
-
 
