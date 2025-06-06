@@ -15,7 +15,7 @@ TYPE_LABELS = {
     '객관식': 'Multiple Choice'
 }
 
-# 문제 불러오기
+# 문제 불러오기 (핵심 수정)
 def load_questions_from_txt(file):
     questions = []
     lines = file.getvalue().decode('utf-8').splitlines()
@@ -24,9 +24,13 @@ def load_questions_from_txt(file):
             parts = line.strip().split('|')
             if len(parts) >= 4:
                 _, qtype, question, answer_raw = parts[:4]
+                options_raw = parts[4:]
+
+                # 보기 전체 유지 (예: '1) 보기', '2) 보기')
+                options = [opt.strip() for opt in options_raw if opt.strip()]
+
                 if qtype == '객관식':
-                    options_with_numbers = [opt.strip() for opt in parts[4:]]
-                    options = [opt.split(')', 1)[1].strip() if ')' in opt else opt for opt in options_with_numbers]
+                    # 정답이 숫자인 경우, 보기 텍스트로 변환
                     if answer_raw.strip().isdigit():
                         idx = int(answer_raw.strip()) - 1
                         answer = options[idx] if 0 <= idx < len(options) else answer_raw.strip()
@@ -35,6 +39,7 @@ def load_questions_from_txt(file):
                 else:
                     options = []
                     answer = answer_raw.strip()
+
                 questions.append({
                     'type': qtype,
                     'label': TYPE_LABELS.get(qtype, qtype),
@@ -44,35 +49,36 @@ def load_questions_from_txt(file):
                 })
     return questions
 
-# 결과 파일 생성
+
+# 결과 텍스트 생성
 def generate_result_text(questions, user_answers, score):
     output = io.StringIO()
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     output.write(f"GIS 랜덤 퀴즈 결과 - {now}\n")
     output.write(f"총 점수: {score} / {len(questions)}\n\n")
     for idx, (q, ua) in enumerate(zip(questions, user_answers), start=1):
-        correct = q['answer'].strip().lower()
-        user = ua.strip().lower()
-        result = "정답" if correct == user else "오답"
+        correct = q['answer'].strip()
+        result = "정답" if correct == ua.strip() else "오답"
         output.write(f"{idx}. [{q['label']}] {q['question']}\n")
-        output.write(f"    - 정답: {q['answer']} | 내 답: {ua} → {result}\n")
+        output.write(f"    - 정답: {correct} | 내 답: {ua} → {result}\n")
     return output.getvalue()
+
 
 # 통계 저장
 def save_stats_to_csv(questions, user_answers, score, filepath="quiz_stats.csv"):
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     data = []
     for q, ua in zip(questions, user_answers):
-        correct = q['answer'].strip().lower()
-        user = ua.strip().lower()
+        correct = q['answer'].strip()
+        user = ua.strip()
         is_correct = correct == user
         data.append({
             "timestamp": now,
             "type": q['type'],
             "label": q['label'],
             "question": q['question'],
-            "user_answer": ua,
-            "correct_answer": q['answer'],
+            "user_answer": user,
+            "correct_answer": correct,
             "result": "정답" if is_correct else "오답"
         })
 
@@ -85,7 +91,8 @@ def save_stats_to_csv(questions, user_answers, score, filepath="quiz_stats.csv")
 
     combined_df.to_csv(filepath, index=False)
 
-# 앱 실행
+
+# 스트림릿 앱
 st.title("🌍 GIS 랜덤 퀴즈 웹앱")
 
 uploaded_file = st.file_uploader("📁 문제.txt 파일을 업로드해주세요", type=['txt'])
@@ -139,16 +146,23 @@ if uploaded_file:
                 score = 0
                 st.subheader("📊 채점 결과")
                 for idx, (q, ua) in enumerate(zip(selected_questions, user_answers), start=1):
-                    correct = q['answer'].strip().lower()
-                    user = ua.strip().lower()
+                    correct = q['answer'].strip()
+                    user = ua.strip()
                     is_correct = correct == user
                     if is_correct:
                         score += 1
                     st.markdown(
-                        f"{idx}. {'✅ 정답' if is_correct else f'❌ 오답'} - 정답: {q['answer']} / 내 답: {ua}"
+                        f"{idx}. {'✅ 정답' if is_correct else f'❌ 오답'} - 정답: {correct} / 내 답: {user}"
                     )
 
                 st.success(f"🎯 총 점수: {score} / {len(selected_questions)}")
+
+                result_text = generate_result_text(selected_questions, user_answers, score)
+                st.download_button("📥 결과 저장 (txt)", result_text, file_name="quiz_result.txt")
+
+                save_stats_to_csv(selected_questions, user_answers, score)
+
+
 
                 result_text = generate_result_text(selected_questions, user_answers, score)
                 st.download_button("📥 결과 저장 (txt)", result_text, file_name="quiz_result.txt")
