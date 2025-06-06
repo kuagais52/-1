@@ -134,4 +134,3 @@ if uploaded_file:
                 result_text = generate_result_text(selected_questions, user_answers, score)
                 st.download_button("📥 결과 저장 (txt)", result_text, file_name="quiz_result.txt")
                 save_stats_to_csv(selected_questions, user_answers, score)
-
